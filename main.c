@@ -98,7 +98,10 @@ void producer() {
             Sleep(para);
         }
     }
-    get_all_works = true;
+//    pthread_mutex_lock(&x_mutex);
+//    get_all_works = true;
+//    pthread_cond_signal(&x_cond);
+//    pthread_mutex_unlock(&x_mutex);
 }
 
 void consumer() {
@@ -116,15 +119,11 @@ void consumer() {
 
         printf("   %.3f ID= %d     \tAsk\n",get_time(), id);
         total_asks++;
-        pthread_mutex_unlock(&x_mutex);
         jump:
-        pthread_mutex_lock(&x_mutex);
         para = dequeue(&queue_head);
         if (para == -1) {
             if (get_all_works == false) {
                 pthread_cond_wait(&x_cond, &x_mutex);
-                pthread_mutex_unlock(&x_mutex);
-//                continue;
                 goto jump;
             }
             else {
@@ -177,6 +176,15 @@ int main(int argc, char *argv[]) {
     }
 
     producer();
+
+    // let all waiting threads know that all works being read
+    for (int i=1; i<num_threads; i++) {
+        pthread_mutex_lock(&x_mutex);
+        get_all_works = true;
+        pthread_cond_signal(&x_cond);
+        pthread_mutex_unlock(&x_mutex);
+    }
+
     for (int i=0; i<num_threads; i++) {
         pthread_join(thread_ids[i], NULL);
     }
