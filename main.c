@@ -23,6 +23,8 @@ int *thread_work_counts;
 
 struct timeval start;
 
+// ref for queue:
+// https://gist.github.com/kroggen/5fc7380d30615b2e70fcf9c7b69997b6
 typedef struct node {
     int para;
     struct node *next;
@@ -63,6 +65,11 @@ int dequeue(node_t **head) {
     return retval;
 }
 
+
+/**
+ * get the time since program starts
+ * @return a double for time interval
+ */
 double get_time(){
     struct timeval end;
     gettimeofday(&end, NULL);
@@ -70,7 +77,9 @@ double get_time(){
     return time;
 }
 
-
+/**
+ * producer that read each command and performs sleep command
+ */
 void producer() {
     char line[10];
 
@@ -79,12 +88,11 @@ void producer() {
             char *endptr;
             int para = (int) strtol(&line[1], &endptr, 10);
             pthread_mutex_lock(&x_mutex);
+            // signal a thread that a new work put in queue
             pthread_cond_signal(&x_cond);
             works_remain++;
             total_works++;
             enqueue(&queue_head, para);
-//            sleep(1);
-//            printf("%c %d %.3f\n", line[0], para, get_time());
             printf("   %.3f ID= 0 Q= %d\tWork         %d\n", get_time(), works_remain, para);
             pthread_mutex_unlock(&x_mutex);
         }
@@ -104,6 +112,9 @@ void producer() {
 //    pthread_mutex_unlock(&x_mutex);
 }
 
+/**
+ * consumer thread ask for jobs, waits when no jobs in queue, ends when all jobs being read and done
+ */
 void consumer() {
 
     pthread_mutex_lock(&x_mutex);
@@ -154,30 +165,32 @@ void consumer() {
 int main(int argc, char *argv[]) {
     char *endptr;
     int num_threads = (int) strtol(argv[1], &endptr, 10);
-
+    // initial work counts that stores works done by each thread
     thread_work_counts = malloc(sizeof(int)*num_threads);
     fflush(stdout);
+    // store start time
     gettimeofday(&start, NULL);
     char filename[] = "prodcon.0.log";
     if (argc == 3) {
         filename[8] = *argv[2];
     }
+    // stdout redirection
     // https://stackoverflow.com/questions/8516823/redirecting-output-to-a-file-in-c#:~:text=When%20you%20fork%20the%20child,ls%20as%20usual%3B%20its%20standard
     int out = open(filename, O_RDWR|O_CREAT|O_APPEND, 0600);
     if (-1 == out) { perror("opening log"); return 255; }
     int save_out = dup(fileno(stdout));
     if (-1 == dup2(out, fileno(stdout))) { perror("cannot redirect stdout"); return 255; }
 
-    printf("\nstart\n");
-
+    // create each thread
     pthread_t thread_ids[num_threads];
     for (int i=0; i < num_threads; i++) {
-        pthread_create(&thread_ids[i], NULL, consumer, NULL);
+        pthread_create(&thread_ids[i], NULL, (void *(*)(void *)) consumer, NULL);
     }
 
     producer();
 
     // let all waiting threads know that all works being read
+    // avoid thread wait for new work after all work get read by producer
     for (int i=1; i<num_threads; i++) {
         pthread_mutex_lock(&x_mutex);
         get_all_works = true;
@@ -185,6 +198,7 @@ int main(int argc, char *argv[]) {
         pthread_mutex_unlock(&x_mutex);
     }
 
+    // wait for each thread done their jobs
     for (int i=0; i<num_threads; i++) {
         pthread_join(thread_ids[i], NULL);
     }
